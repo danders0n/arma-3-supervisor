@@ -1,0 +1,5 @@
+{
+    "version": "1.0",
+    "directory": "/path/to/server/",
+    "executable": "arma3server.exe"
+}
