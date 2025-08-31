@@ -1,5 +1,5 @@
 {
     "version": "1.0",
-    "directory": "/path/to/server/",
-    "executable": "arma3server.exe"
+    "directory": "/opt/arma-3/server",
+    "executable": "arma3serverprofiling_x64"
 }
