@@ -2,14 +2,14 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 @dataclass
-class Header(BaseModel):
+class HeaderModel(BaseModel):
     origin: str
     request: str
     authorization: str
 
 
 @dataclass
-class Server(BaseModel):
+class MissionModel(BaseModel):
     name: str
     password: str
     players: int
@@ -18,7 +18,7 @@ class Server(BaseModel):
 
 
 @dataclass
-class StartServer(BaseModel):
+class StartModel(BaseModel):
     version: int
-    header: Header
-    server: Server
+    header: HeaderModel
+    server: MissionModel

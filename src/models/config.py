@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 @dataclass
-class Config():
+class ConfigModel():
     version: int
     directory: str
     executable: str
