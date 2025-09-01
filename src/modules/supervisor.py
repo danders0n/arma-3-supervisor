@@ -2,6 +2,7 @@ from pathlib import Path
 
 from models.config import ConfigModel
 from models.server import StartModel
+from modules.server import Server
 
 class Supervisor():
     """
@@ -33,14 +34,11 @@ class Supervisor():
 
 
     def start(self, config: StartModel):
-        
-        print(config.version)
-        print(config.header)
-        print(config.server)
+        srv = Server(self.config, config.server)
+
+        srv.verify_workshop()
         # Split request between arma server and auth 
-        is_valid = self._validate_directory()
-        # self.servers.append({"server_id": 1})
-        print("Staring:", {"server_id": 1})
+        # is_valid = self._validate_directory()
         return {"server_id": 1}
 
 

@@ -15,6 +15,7 @@ class MissionModel(BaseModel):
     players: int
     mission: str
     preset: str
+    headless: int
 
 
 @dataclass
