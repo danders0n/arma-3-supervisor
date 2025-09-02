@@ -1,5 +1,5 @@
 {
-    "version": "1.0",
+    "version": 1,
     "directory": "/opt/arma-3/",
     "executable": "arma3serverprofiling_x64"
 }

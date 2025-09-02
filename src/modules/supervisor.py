@@ -36,7 +36,7 @@ class Supervisor():
     def start(self, config: StartModel):
         srv = Server(self.config, config.server)
 
-        srv.verify_workshop()
+        srv.start()
         # Split request between arma server and auth 
         # is_valid = self._validate_directory()
         return {"server_id": 1}

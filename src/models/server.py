@@ -12,6 +12,8 @@ class HeaderModel(BaseModel):
 class MissionModel(BaseModel):
     name: str
     password: str
+    admin_password: str
+    signatures: int
     players: int
     mission: str
     preset: str
