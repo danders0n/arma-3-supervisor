@@ -1,8 +1,11 @@
 import json
 import uvicorn
 
-from fastapi import FastAPI
+
+from fastapi import FastAPI, HTTPException
 from pathlib import Path
+from contextlib import asynccontextmanager
+
 
 # Internal imports
 from modules.supervisor import Supervisor
@@ -18,35 +21,48 @@ def load_config(path: Path) -> ConfigModel:
     with open(path, "r") as f:
         data = json.load(f)
 
-    # convert dict → dataclass
+    # convert dict -> dataclass
     config = ConfigModel(
         version = data["version"],
         directory = data["directory"],
-        executable = data["executable"]
+        executable = data["executable"],
+        max_servers = data["max_servers"]
     )
     return config
 
-# --- SETUP SUPERVISOR ---
-config = load_config(Path("config/devel.json"))
-supervisor = Supervisor(config)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- STARTUP ---
+    config = load_config(Path("config/devel.json"))
+    app.state.supervisor = Supervisor(config)
+
+    yield # <- here magic happends
+
+    # --- SHUTDOWN ---
+
 
 # --- FAST API ---
-app = FastAPI()
+app = FastAPI(lifespan = lifespan)
+
+    
 
 @app.post("/server_start", summary="Try start the server")
 def start(config: StartModel):
-    response = supervisor.start(config)
+    status, response = app.state.supervisor.start(config)
+    if status != 0:
+        raise HTTPException(status_code=404, detail=response)
     return response
 
 
-@app.post("/server_stop", summary="Try stop the server")
-def stop():
-    pass
+@app.delete("/server_stop", summary="Try stop the server")
+def stop(id: int):
+    app.state.supervisor.stop(id)
 
 
 @app.get("/server_status")
 def status(id: int):
-    return supervisor.status(id)
+    return app.state.supervisor.status(id)
 
 
 @app.get("/list_servers", summary="List all running servers under supervisor")

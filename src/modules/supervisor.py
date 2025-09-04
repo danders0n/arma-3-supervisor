@@ -13,7 +13,7 @@ class Supervisor():
         self.config = config
         self.servers = []
 
-    def _validate_directory(self):
+    def __validate_directory(self):
         reqiuers_paths = [
             self.config.directory,
             f"{self.config.directory}/configs",
@@ -34,23 +34,28 @@ class Supervisor():
 
 
     def start(self, config: StartModel):
-        srv = Server(self.config, config.server)
+        server = Server("server-1", self.config, config.server)
+        status, error_list = server.start()
 
-        srv.start()
-        # Split request between arma server and auth 
-        # is_valid = self._validate_directory()
+        if status != 0:
+            return 1, error_list
+        self.servers.append({"id": 1, "server": server})
+        # Split request between arma server and auth
+
         return {"server_id": 1}
 
 
-    def stop(self):
-        print("Stop", self.config)
+    def stop(self, id: int):
+        print(self.servers)
+        for i, server in enumerate(self.servers):
+            if server.get("id") == id:
+                self.servers.pop(i)
+                server.get("server").stop()
 
     
     def status(self, id: int):
-        for instance in self.servers:
-            if id == instance.get("server_id"):
-                print (f"Requested status of {instance}")
-                return instance
+        print(self.servers)
+        is_valid = self.__validate_directory()
 
 
 if __name__ == "__main__":
