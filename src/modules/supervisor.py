@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 from models.config import ConfigModel
@@ -13,26 +14,62 @@ class Supervisor():
         self.config = config
         self.servers = []
 
-    def __validate_directory(self):
-        reqiuers_paths = [
-            self.config.directory,
-            f"{self.config.directory}/configs",
-            f"{self.config.directory}/userconfig",
-            f"{self.config.directory}/workshop",
-            f"{self.config.directory}/servermods",
-            f"{self.config.directory}/{self.config.executable}",
-        ]
+        self.__validate_server_setup()
 
-        for path in reqiuers_paths:
-            path = Path(path)
-            if not path.exists():
-                print(f"[!] Missing directory..  {str(path)}")
-                return False
-                # path.mkdir(parents=True, exist_ok=True)
+
+    def __validate_server_setup(self):
+        working_directory  = Path(self.config.directory)
+
+        # Checking for master directory
+        if not working_directory.exists():
+            print(f"ERROR:  {working_directory} not found!")
+            error = {"supervisor_error": f"{working_directory} not found!"}
+            return error
         
-        return True
+        # Checking for subdirectories
+        required_directories = ["configs", "logs", "missions", "presets", "profiles", "server"]
+        for directory in required_directories:
+            tgt_dir = working_directory / directory
+            if not tgt_dir.exists():
+                print(f"WARNING:  Missing directory... {tgt_dir}")
+        
+        # Setup instances
+        for i in range(1, self.config.max_servers + 1):
+            server = {
+                "name": f"server-{i}",
+                "port": int(f"2{i+2}02"),
+                "status": "READY",
+                "info": None, 
+                "server": None
+            }
+            self.__setup_instance_directory(f"server-{i}")
+            self.servers.append(server)
 
 
+    def __setup_instance_directory(self, name: str):
+        """
+        Creates new server instance
+        """
+        # Create instance directory
+        instance_directory = Path(self.config.directory, name)
+        master_directory = Path(self.config.directory, "server")
+        
+        if not instance_directory.exists():
+            instance_directory.mkdir(parents=True)
+            for i in master_directory.iterdir():
+                if i.name not in ["keys", "userconfig"]:
+                    print(f"Creating symlink to... {i.name}")
+                    (instance_directory / i.name).symlink_to(i)
+
+            if not (instance_directory / "keys").exists():
+                print("Creating directory... keys")
+                shutil.copytree(master_directory / "keys", instance_directory / "keys")
+
+            if not (instance_directory / "userconfig").exists():
+                print("Creating directory... userconfig")
+                (instance_directory / "userconfig").mkdir(parents=True)
+                
+    
     def start(self, config: StartModel):
         server = Server("server-1", self.config, config.server)
         status, error_list = server.start()
@@ -55,7 +92,6 @@ class Supervisor():
     
     def status(self, id: int):
         print(self.servers)
-        is_valid = self.__validate_directory()
 
 
 if __name__ == "__main__":

@@ -144,8 +144,8 @@ class Server():
 
     def start(self):
         self.__verify_workshop()
-        # self.__parse_config()
-        # args = self.__parse_arguments()
+        self.__parse_config()
+        args = self.__parse_arguments()
 
         if len(self.errors) > 0:
             return 1, self.errors
