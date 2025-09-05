@@ -8,10 +8,12 @@ from models.config import ConfigModel
 
 
 class Server():
-    def __init__(self, server_name:str, config: ConfigModel, mission: MissionModel):
-        self.server_name = server_name
+    def __init__(self, config: ConfigModel, name:str, port: int, mission: MissionModel):
         self.config = config
+        self.server_name = name
+        self.server_port = port
         self.mission = mission
+        
         self.server_directory = Path(self.config.directory, self.server_name)
         self.errors = {}
 
@@ -58,9 +60,9 @@ class Server():
         return 0
         
 
-    def __verify_workshop(self):
+    def __verify_workshop(self) -> int:
         """
-            Verify mods for existence and keys
+        Verify mods for existence and keys
         """
         missing_mods = []
         mods_without_keys = []
@@ -87,7 +89,8 @@ class Server():
         # TODO: Download new mods
         return mods_without_keys, missing_mods
 
-    def __parse_config(self):
+
+    def __parse_config(self) -> int:
         template_path = Path (self.config.directory, "configs/server.cfg")
         config_path = Path (self.config.directory, "configs", f"{self.server_name}.cfg")
 
@@ -122,7 +125,7 @@ class Server():
         args = [
            str(self.server_directory / self.config.executable), 
             "-name=" + str(self.server_name),
-            "-port=" + "2302",
+            "-port=" + str(self.server_port),
             "-profiles=/opt/arma-3/profiles/",
             "-cfg=/opt/arma-3/configs/basic.cfg",
             "-config=" + str(self.config.directory) + "configs/" + f"{self.server_name}.cfg",
@@ -151,7 +154,7 @@ class Server():
             return 1, self.errors
         else:
             self.process = subprocess.Popen(args, cwd=self.server_directory)
-            return 0, self.process
+            return 0, {}
     
 
     def stop(self):

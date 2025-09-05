@@ -2,5 +2,6 @@
     "version": 1,
     "directory": "/opt/arma-3/",
     "executable": "arma3serverprofiling_x64",
-    "max_servers": 3
+    "max_servers": 3,
+    "max_headless": 2
 }

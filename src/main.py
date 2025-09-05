@@ -2,7 +2,7 @@ import json
 import uvicorn
 
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -26,7 +26,8 @@ def load_config(path: Path) -> ConfigModel:
         version = data["version"],
         directory = data["directory"],
         executable = data["executable"],
-        max_servers = data["max_servers"]
+        max_servers = data["max_servers"],
+        max_headless = data["max_headless"],
     )
     return config
 
@@ -37,7 +38,7 @@ async def lifespan(app: FastAPI):
     config = load_config(Path("config/devel.json"))
     app.state.supervisor = Supervisor(config)
 
-    yield # <- here magic happends
+    yield # <- Here There Be Dragons
 
     # --- SHUTDOWN ---
 
@@ -46,23 +47,24 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan = lifespan)
 
     
-
 @app.post("/server_start", summary="Try start the server")
-def start(config: StartModel):
-    status, response = app.state.supervisor.start(config)
+async def start(mission_config: StartModel, background_tasks: BackgroundTasks):
+    status, messeages = app.state.supervisor.validate_start_request(mission_config)
     if status != 0:
-        raise HTTPException(status_code=404, detail=response)
-    return response
+        raise HTTPException( status_code=400, detail=messeages)
+    else:
+        background_tasks.add_task(app.state.supervisor.start(mission_config))
 
+    return messeages
 
 @app.delete("/server_stop", summary="Try stop the server")
-def stop(id: int):
-    app.state.supervisor.stop(id)
+async def stop(uuid: str):
+    app.state.supervisor.stop(uuid)
 
 
 @app.get("/server_status")
-def status(id: int):
-    return app.state.supervisor.status(id)
+def status(uuid: str):
+    return app.state.supervisor.status(uuid)
 
 
 @app.get("/list_servers", summary="List all running servers under supervisor")

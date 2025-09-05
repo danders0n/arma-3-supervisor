@@ -6,3 +6,4 @@ class ConfigModel():
     directory: str
     executable: str
     max_servers: int
+    max_headless: int
