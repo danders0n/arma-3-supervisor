@@ -69,7 +69,7 @@ def status(uuid: str):
 
 @app.get("/list_servers", summary="List all running servers under supervisor")
 def list_servers():
-    pass
+    return app.state.supervisor.list_servers()
 
 
 # TODO: Main functiona and config parser here somewhere some time 

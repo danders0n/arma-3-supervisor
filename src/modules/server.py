@@ -19,7 +19,7 @@ class Server():
         self.executable = root_directory / name / executable
 
         self.mods = {}
-        self.state = "Ready"
+        self.state = "Open"
         self.messages = {            
             "server_errors": [],
             "server_messages": []
@@ -160,15 +160,18 @@ class Server():
         if status == 0:
             self.__verify_workshop()
         
+        self.__parser_server_config(mission_config)
         args = self.__parser_start_arguments()
 
         if status != 0:
             return 1, self.messages
         else:
             self.process = subprocess.Popen(args, cwd=self.directory)
+            self.state = "Running"
             return 0, {}
 
 
     def stop(self):
         if hasattr(self, "process") and self.process.poll() is None:
+            self.state = "Open"
             self.process.terminate()

@@ -61,6 +61,9 @@ class Supervisor():
             if not (instance_directory / "keys").exists():
                 # print("Creating directory... keys")
                 shutil.copytree(master_directory / "keys", instance_directory / "keys")
+            else:
+                shutil.rmtree(instance_directory / "keys")
+                shutil.copytree(master_directory / "keys", instance_directory / "keys")
 
             if not (instance_directory / "userconfig").exists():
                 # print("Creating directory... userconfig")
@@ -137,7 +140,7 @@ class Supervisor():
 
         # Find free instance and assign to current request
         for i, instance in enumerate(self.servers):
-            if instance.state == "Ready":
+            if instance.state == "Open":
                 idx = i
                 print(f"Instance {i+1} - UUID: {instance.uuid} assigned to request (...)")
                 break
@@ -148,6 +151,7 @@ class Supervisor():
         if status == 0:
             server = self.servers[idx]
             server.start(mission_config.server)
+            msgs = {"supervisor_message": instance.uuid}
 
         # Split request between arma server and auth
         print(status, msgs)
@@ -155,15 +159,46 @@ class Supervisor():
 
 
     def stop(self, uuid: str):
-        for i, instance in enumerate(self.servers):
-            print(instance.uuid)
-            if instance.uuid == uuid:
-                print(f"Requesting stop for {instance.uuid}")
-                instance.stop()
+        idx = -1
+
+        for i, server in enumerate(self.servers):
+            if server.uuid == uuid:
+                print(f"Requesting stop for {server.uuid}")
+                idx = i
+                server.stop()
+        
+        # restart instance
+        # del self.servers[idx]
+        # server = Server(name, port, root_directory, self.server_config.executable)
 
     
     def status(self, uuid: str):
-        pass
+        status = 0
+        msgs = []
+
+        return status, msgs
+    
+
+    def list_servers(self):
+        servers_list = {}
+
+        for i, server in enumerate(self.servers):
+            status = self.__get_server_status(server)
+            servers_list[f"server={i+1}"] = status
+
+        return servers_list
+
+
+    def __get_server_status(self, server: Server):
+        status = {}
+        status["uuid"] = server.uuid
+        status["state"] = server.state
+        status["name"] = server.name
+        status["port"] = server.port
+        status["mods"] = server.mods
+
+        return status
+
 
 
 if __name__ == "__main__":
