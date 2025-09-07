@@ -53,7 +53,7 @@ async def start(mission_config: StartModel, background_tasks: BackgroundTasks):
     if status != 0:
         raise HTTPException( status_code=400, detail=messeages)
     else:
-        background_tasks.add_task(app.state.supervisor.start(mission_config))
+        background_tasks.add_task(app.state.supervisor.start, mission_config)
 
     return messeages
 

@@ -1,21 +1,17 @@
 import shutil
-import uuid
-import re
-
 
 from pathlib import Path
 from typing import Tuple
-
 
 from models.config import ConfigModel
 from models.server import StartModel
 from modules.server import Server
 
+
 class Supervisor():
     """
     docstring
     """
-
     def __init__(self, server_config: ConfigModel):
         self.server_config = server_config
         self.servers = []
@@ -49,23 +45,16 @@ class Supervisor():
         """
         Creates new server instance
         """
-        server = {
-                "uuid": str(uuid.uuid4()),
-                "name": name,
-                "port": port,
-                "status": "READY",
-                "info": None, 
-                "server": None
-            }
-        
         # Create instance directory
-        instance_directory = Path(self.server_config.directory, name)
-        master_directory = Path(self.server_config.directory, "server")
+        root_directory = Path(self.server_config.directory)
+        instance_directory = root_directory / name
+        master_directory =root_directory / "server"
         
+        # Create directory tree 
         if not instance_directory.exists():
             instance_directory.mkdir(parents=True)
             for i in master_directory.iterdir():
-                if i.name not in ["keys", "userconfig"]:
+                if i.name not in ["keys", "userconfig", "mpmissions"]:
                     # print(f"Creating symlink to... {i.name}")
                     (instance_directory / i.name).symlink_to(i)
 
@@ -77,10 +66,16 @@ class Supervisor():
                 # print("Creating directory... userconfig")
                 (instance_directory / "userconfig").mkdir(parents=True)
 
-        print(f'Server instance with UUID: {server["uuid"]} created!' )
+            if not (instance_directory / "mpmissions").exists():
+                # print("Creating directory... userconfig")
+                (instance_directory /"mpmissions").symlink_to(Path(self.server_config.directory , "missions"))
+
+        # Create server objects
+        server = Server(name, port, root_directory, self.server_config.executable)
+        print(f"Created instance: {server.name} with UUID: {server.uuid} with state {server.state}")
+
         return server
                 
-
 
     def validate_start_request(self, mission_config: StartModel) -> Tuple[int, dict]:
         """
@@ -89,7 +84,7 @@ class Supervisor():
         status = 0
         msgs = {
             "supervisor_errors": [],
-            "supervisor_messages": [],
+            "supervisor_messages": []
         }
 
         if mission_config.version != 1:
@@ -97,11 +92,11 @@ class Supervisor():
             msgs["supervisor_errors"].append("Unsupported request schema version!")
             status = 1
             
-        for val in [mission_config.server.name, mission_config.server.password, mission_config.server.admin_password]:
-            if not re.match(r"^[A-Za-z0-9_-]+$", val):
-                print (f"ERROR:\tSupervisor: Cought forbidden character: only letters, numbers, _ and - allowed")
-                msgs["supervisor_errors"].append("Cought forbidden character: only letters, numbers, _ and - allowed")
-                status = 1
+        # for val in [mission_config.server.name, mission_config.server.password, mission_config.server.admin_password]:
+        #     if not re.match(r"^[A-Za-z0-9_-]+$", val):
+        #         print (f"ERROR:\tSupervisor: Cought forbidden character: only letters, numbers, _ and - allowed")
+        #         msgs["supervisor_errors"].append("Cought forbidden character: only letters, numbers, _ and - allowed")
+        #         status = 1
 
         if mission_config.server.signatures not in (-1, 0, 2):
             print (f"ERROR:\tSupervisor: Invalid signature value!")
@@ -137,52 +132,38 @@ class Supervisor():
 
 
     def start(self, mission_config: StartModel):
-        assigned_instance_idx = -1
+        status, msgs = 0, {}
+        idx = -1
+
+        # Find free instance and assign to current request
         for i, instance in enumerate(self.servers):
-            if instance["status"] == "READY":
-                assigned_instance_idx = i
+            if instance.state == "Ready":
+                idx = i
+                print(f"Instance {i+1} - UUID: {instance.uuid} assigned to request (...)")
                 break
-            if i == self.server_config.max_servers -1:
-                return 1, {"supervisor_error": f"Max limit ({self.server_config.max_servers}) reached! Supervisor cannot launch more instances"}
-
-        name = self.servers[assigned_instance_idx]["name"]
-        port = self.servers[assigned_instance_idx]["port"]
-        server = Server(self.server_config, name, port, mission_config.server)
-
-        status, error_list = server.start()
-
-
-        self.servers[assigned_instance_idx]["status"] = "Running"
-        self.servers[assigned_instance_idx]["server"] = server
-        print(self.servers[assigned_instance_idx])
+            if i + 1 == self.server_config.max_servers:
+                status = 1
+                msgs = {"supervisor_errors": "Max allowed server reached!"}
+        
+        if status == 0:
+            server = self.servers[idx]
+            server.start(mission_config.server)
 
         # Split request between arma server and auth
-        print(status, error_list)
-        return status, error_list
+        print(status, msgs)
+        return status, msgs
 
 
-    def stop(self, id: int):
-        print(self.servers)
-        for i, server in enumerate(self.servers):
-            if server.get("id") == id:
-                self.servers.pop(i)
-                server.get("server").stop()
+    def stop(self, uuid: str):
+        for i, instance in enumerate(self.servers):
+            print(instance.uuid)
+            if instance.uuid == uuid:
+                print(f"Requesting stop for {instance.uuid}")
+                instance.stop()
 
     
     def status(self, uuid: str):
-        srv_status = None
-        for server in self.servers:
-            if server["uuid"] == uuid:
-                srv_status = {
-                    "name": server["name"], "port": server["port"], 
-                    "status": server["status"], "info": server["info"]
-                }
-                break
-            else:
-                srv_status = {"supervisor_error": f"Instance with UUID: {uuid} not found!"}
-
-        print(f"Status request: {srv_status}")
-        return srv_status
+        pass
 
 
 if __name__ == "__main__":

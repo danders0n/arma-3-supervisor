@@ -1,42 +1,45 @@
 import re
+import uuid
 import shutil
 import subprocess
 
 from pathlib import Path
+from typing import Tuple
+
 from models.server import MissionModel
-from models.config import ConfigModel
 
 
 class Server():
-    def __init__(self, config: ConfigModel, name:str, port: int, mission: MissionModel):
-        self.config = config
-        self.server_name = name
-        self.server_port = port
-        self.mission = mission
-        
-        self.server_directory = Path(self.config.directory, self.server_name)
-        self.errors = {}
+    def __init__(self, name:str, port: int, root_directory: Path, executable: str):
+        self.uuid = str(uuid.uuid4())
+        self.name = name
+        self.port = port
+        self.root_directory = root_directory
+        self.directory = root_directory / name
+        self.executable = root_directory / name / executable
 
-        self.__html_preset()
-    
-
-    def __html_preset(self) -> int:
-        """
-        Return dictionary of IDs and Names from HTML Preset exported from Arma 3 Launcher     
-        """
         self.mods = {}
+        self.state = "Ready"
+        self.messages = {            
+            "server_errors": [],
+            "server_messages": []
+        }
 
-        mods_id = []
-        names_id = []
 
-        preset_filepath = Path(self.config.directory, "presets", self.mission.preset)
+    def __parser_html_preset(self, preset: Path) -> int:
+        """
+        
+        """
+        status = 0
+        mods_id, mods_names = [], []
+        preset_path = Path(self.root_directory, "presets", preset)
 
-        if not preset_filepath.exists():
-            self.errors["html_parser"] = f"{self.mission.preset} not found in presets directory"
-            return 1
+        if not preset_path.exists():
+            self.messages["server_errors"].append(f"parser_html: Preset file not found... {preset_path}")
+            status = 1
 
-        # Reading preset
-        with open(preset_filepath) as file:
+         # Reading preset
+        with open(preset_path) as file:
             html = file.read()
 
             regex_id = r"filedetails\/\?id=(\d+)\""
@@ -49,26 +52,28 @@ class Server():
             for match in matches_id:
                 mods_id.append(match.group(1))
             for match in matches_name:
-                names_id.append(match.group(1))
+                mods_names.append(match.group(1))
 
-        if len(mods_id) != len(names_id):
-            self.errors["html_parser"] = f"{self.mission.preset} parsing failed, mismatched IDs and Names"
-            return 1
+        if len(mods_id) != len(mods_names):
+            self.messages["server_errors"].append(f"{__name__}: parsing failed, mismatched IDs and Names. {preset_path}")
+            status = 1 
+        
+        if status == 0:
+            self.mods = dict(zip(mods_id, mods_names))
 
-        self.mods = dict(zip(mods_id, names_id))
-
-        return 0
+        return status
         
 
-    def __verify_workshop(self) -> int:
+    def __verify_workshop(self):
         """
         Verify mods for existence and keys
         """
-        missing_mods = []
-        mods_without_keys = []
-        workshop_directory = self.server_directory / "workshop"
+        status = 0
+        missing_mods, mods_without_keys = [], []
+        workshop_directory = self.directory / "workshop"
+
         for id, name in self.mods.items():
-            mod_path = Path(workshop_directory, id)
+            mod_path = workshop_directory / id
 
             # check if mods exists in workshop directory
             if not mod_path.exists():
@@ -79,7 +84,7 @@ class Server():
             keys = list(mod_path.glob("*/*.bikey"))
             if len(keys) > 0:
                 for key in keys:
-                    shutil.copy2(key, self.server_directory / "keys" / key.name)
+                    shutil.copy2(key, self.directory / "keys" / key.name)
                 self.signatures = 2
             else:
                 print(f"{mod_path} Keys Not Found!")
@@ -87,28 +92,29 @@ class Server():
                 self.signatures = 0
 
         # TODO: Download new mods
-        return mods_without_keys, missing_mods
+        return status
 
 
-    def __parse_config(self) -> int:
-        template_path = Path (self.config.directory, "configs/server.cfg")
-        config_path = Path (self.config.directory, "configs", f"{self.server_name}.cfg")
+    def __parser_server_config(self, mission_config: MissionModel):
+        template_path = self.root_directory / "configs/server.cfg"
+        config_path = self.root_directory / "configs" / f"{self.name}.cfg"
 
+        print()
         # if signatures were not set then used based on keys availability
-        if self.mission.signatures == -1:
-            signatures = self.mission.signatures
+        if mission_config.signatures == -1:
+            signatures = mission_config.signatures
         else:
             signatures = self.signatures
             
 
         # TODO: arguments verification
         mapping_dictionary = {
-            "NAME": self.mission.name,
-            "PASSWD": self.mission.password,
-            "ADMINPASSWD": self.mission.admin_password,
-            "PLAYERS": self.mission.players,
+            "NAME": mission_config.name,
+            "PASSWD": mission_config.password,
+            "ADMINPASSWD": mission_config.admin_password,
+            "PLAYERS": mission_config.players,
             "SIGNATURES": signatures,
-            "MISSSION": self.mission.mission
+            "MISSSION": mission_config.mission[:-4]
         }
 
         text = template_path.read_text()
@@ -121,14 +127,14 @@ class Server():
         return config_path
 
 
-    def __parse_arguments(self):
+    def __parser_start_arguments(self):
         args = [
-           str(self.server_directory / self.config.executable), 
-            "-name=" + str(self.server_name),
-            "-port=" + str(self.server_port),
+           str(self.executable), 
+            "-name=" + str(self.name),
+            "-port=" + str(self.port),
             "-profiles=/opt/arma-3/profiles/",
             "-cfg=/opt/arma-3/configs/basic.cfg",
-            "-config=" + str(self.config.directory) + "configs/" + f"{self.server_name}.cfg",
+            "-config=" + str(self.root_directory / "configs" / f"{self.name}.cfg"),
             "-loadMissionToMemory",
             "-hugePages",
             "-maxFileCacheSize=8192",
@@ -136,27 +142,33 @@ class Server():
             "-debug",
             "-filePatching"
         ]
-        arg_mods = "-mod="
+        arg_mods = "-mod=\""
         for id, name in self.mods.items():
-            mod_path = self.server_directory / "workshop" / id
-            arg_mods += f"{mod_path};"
+            mod_path = f"workshop/{id};"
+            arg_mods += mod_path
         arg_mods = arg_mods[:-1]
+        arg_mods += "\""
 
         args.append(arg_mods)
         return(args)
 
-    def start(self):
-        self.__verify_workshop()
-        self.__parse_config()
-        args = self.__parse_arguments()
 
-        if len(self.errors) > 0:
-            return 1, self.errors
+    def start(self, mission_config: MissionModel):
+        status = 0
+        status = self.__parser_html_preset(Path(mission_config.preset))
+
+        if status == 0:
+            self.__verify_workshop()
+        
+        args = self.__parser_start_arguments()
+
+        if status != 0:
+            return 1, self.messages
         else:
-            self.process = subprocess.Popen(args, cwd=self.server_directory)
+            self.process = subprocess.Popen(args, cwd=self.directory)
             return 0, {}
-    
+
 
     def stop(self):
         if hasattr(self, "process") and self.process.poll() is None:
-            self.process.kill()
+            self.process.terminate()
