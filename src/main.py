@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan = lifespan)
 
     
-@app.post("/server_start", summary="Try start the server")
+@app.post("/start", summary="Try start the server", tags=["server"])
 async def start(mission_config: StartModel, background_tasks: BackgroundTasks):
     status, messeages = app.state.supervisor.validate_start_request(mission_config)
     if status != 0:
@@ -57,12 +57,12 @@ async def start(mission_config: StartModel, background_tasks: BackgroundTasks):
 
     return messeages
 
-@app.delete("/server_stop", summary="Try stop the server")
+@app.delete("/stop", summary="Try stop the server", tags=["server"])
 async def stop(uuid: str):
     app.state.supervisor.stop(uuid)
 
 
-@app.get("/server_status")
+@app.get("/status", tags=["server"])
 def status(uuid: str):
     return app.state.supervisor.status(uuid)
 

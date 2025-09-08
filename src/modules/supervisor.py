@@ -1,23 +1,33 @@
 import shutil
 
 from pathlib import Path
-from typing import Tuple
+from typing import Dict, Any, Tuple, Optional
 
 from models.config import ConfigModel
 from models.server import StartModel
 from modules.server import Server
 
+REQUIRED_DIRECTORIES = ["configs", "logs", "missions", "presets", "profiles", "server"]
 
 class Supervisor():
     """
     docstring
-    """
+    """ 
     def __init__(self, server_config: ConfigModel):
         self.server_config = server_config
-        self.servers = []
+        self.servers = {}
 
         self.__validate_server_setup()
 
+
+    def _response(self, status: int, errors=None, messages=None) -> Dict[str, Any]:
+        """Standard response format."""
+        return {
+            "status": status,
+            "errors": errors or [],
+            "messages": messages or [],
+        }
+    
 
     def __validate_server_setup(self):
         working_directory  = Path(self.server_config.directory)
@@ -29,16 +39,15 @@ class Supervisor():
             return error
         
         # Checking for subdirectories
-        required_directories = ["configs", "logs", "missions", "presets", "profiles", "server"]
-        for directory in required_directories:
+        for directory in REQUIRED_DIRECTORIES:
             tgt_dir = working_directory / directory
             if not tgt_dir.exists():
                 print(f"WARNING:  Missing directory... {tgt_dir}")
         
-        # Setup instances
+        # # Setup instances
         for i in range(1, self.server_config.max_servers + 1):
-            server = self.__setup_instance_directory(f"server-{i}", int(f"2{i+2}02"))
-            self.servers.append(server)
+            server = {f"server-{i}": None}
+            self.servers.update(server)
 
 
     def __setup_instance_directory(self, name: str, port: int):
@@ -70,15 +79,9 @@ class Supervisor():
                 (instance_directory / "userconfig").mkdir(parents=True)
 
             if not (instance_directory / "mpmissions").exists():
-                # print("Creating directory... userconfig")
+                # print(f'Creating symlink to... {instance_directory / "mpmissions"}')
                 (instance_directory /"mpmissions").symlink_to(Path(self.server_config.directory , "missions"))
 
-        # Create server objects
-        server = Server(name, port, root_directory, self.server_config.executable)
-        print(f"Created instance: {server.name} with UUID: {server.uuid} with state {server.state}")
-
-        return server
-                
 
     def validate_start_request(self, mission_config: StartModel) -> Tuple[int, dict]:
         """
@@ -135,42 +138,38 @@ class Supervisor():
 
 
     def start(self, mission_config: StartModel):
-        status, msgs = 0, {}
-        idx = -1
+        status, msgs = 1, {}
 
-        # Find free instance and assign to current request
-        for i, instance in enumerate(self.servers):
-            if instance.state == "Open":
-                idx = i
-                print(f"Instance {i+1} - UUID: {instance.uuid} assigned to request (...)")
+        for key, val in self.servers.items():
+            if val == None:
+                i = int(key[-1:])
+                port = int(f"2{i+2}02")
+                self.__setup_instance_directory(key, port)
+                server = Server(key, port, Path(self.server_config.directory), self.server_config.executable)
+                self.servers[key] = server
+                print(f"Starting {key} on port {port}")
+                status = 0
                 break
-            if i + 1 == self.server_config.max_servers:
-                status = 1
-                msgs = {"supervisor_errors": "Max allowed server reached!"}
-        
-        if status == 0:
-            server = self.servers[idx]
-            server.start(mission_config.server)
-            msgs = {"supervisor_message": instance.uuid}
 
+        if status == 1:
+            print("No free server slots available.")
+        else:
+            server.start(mission_config.server)
         # Split request between arma server and auth
-        print(status, msgs)
+        # print(status, msgs)
         return status, msgs
 
 
-    def stop(self, uuid: str):
+    def stop(self, server_id: str):
         idx = -1
 
-        for i, server in enumerate(self.servers):
-            if server.uuid == uuid:
-                print(f"Requesting stop for {server.uuid}")
-                idx = i
-                server.stop()
+        for id, srv in self.servers.items():
+            if id == server_id:
+                print(f"Requesting stop for {srv.name}")
+                srv.stop()
+                self.servers[id] = None
         
         # restart instance
-        # del self.servers[idx]
-        # server = Server(name, port, root_directory, self.server_config.executable)
-
     
     def status(self, uuid: str):
         status = 0
@@ -182,9 +181,11 @@ class Supervisor():
     def list_servers(self):
         servers_list = {}
 
-        for i, server in enumerate(self.servers):
-            status = self.__get_server_status(server)
-            servers_list[f"server={i+1}"] = status
+        for id, srv in self.servers.items():
+            if srv != None:
+                status = self.__get_server_status(srv)
+                servers_list[id] = status
+                pass
 
         return servers_list
 

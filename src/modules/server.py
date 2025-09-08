@@ -2,12 +2,12 @@ import re
 import uuid
 import shutil
 import subprocess
+import asyncio.subprocess
 
 from pathlib import Path
 from typing import Tuple
 
 from models.server import MissionModel
-
 
 class Server():
     def __init__(self, name:str, port: int, root_directory: Path, executable: str):
