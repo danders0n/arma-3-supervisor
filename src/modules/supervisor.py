@@ -17,19 +17,10 @@ class Supervisor():
         self.server_config = server_config
         self.servers = {}
 
-        self.__validate_server_setup()
+        self._validate_server_setup()
 
 
-    def _response(self, status: int, errors=None, messages=None) -> Dict[str, Any]:
-        """Standard response format."""
-        return {
-            "status": status,
-            "errors": errors or [],
-            "messages": messages or [],
-        }
-    
-
-    def __validate_server_setup(self):
+    def _validate_server_setup(self):
         working_directory  = Path(self.server_config.directory)
 
         # Checking for master directory
@@ -50,7 +41,7 @@ class Supervisor():
             self.servers.update(server)
 
 
-    def __setup_instance_directory(self, name: str, port: int):
+    def _setup_instance_directory(self, name: str, port: int):
         """
         Creates new server instance
         """
@@ -137,14 +128,14 @@ class Supervisor():
         return status, msgs
 
 
-    def start(self, mission_config: StartModel):
+    async def start(self, mission_config: StartModel):
         status, msgs = 1, {}
 
         for key, val in self.servers.items():
             if val == None:
                 i = int(key[-1:])
                 port = int(f"2{i+2}02")
-                self.__setup_instance_directory(key, port)
+                self._setup_instance_directory(key, port)
                 server = Server(key, port, Path(self.server_config.directory), self.server_config.executable)
                 self.servers[key] = server
                 print(f"Starting {key} on port {port}")
@@ -154,7 +145,7 @@ class Supervisor():
         if status == 1:
             print("No free server slots available.")
         else:
-            server.start(mission_config.server)
+            await server.start(mission_config.server)
         # Split request between arma server and auth
         # print(status, msgs)
         return status, msgs
@@ -171,7 +162,7 @@ class Supervisor():
         
         # restart instance
     
-    def status(self, uuid: str):
+    def status(self, server_id: str):
         status = 0
         msgs = []
 

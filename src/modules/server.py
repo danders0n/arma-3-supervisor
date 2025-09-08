@@ -2,10 +2,10 @@ import re
 import uuid
 import shutil
 import subprocess
-import asyncio.subprocess
+import asyncio
 
 from pathlib import Path
-from typing import Tuple
+from datetime import datetime
 
 from models.server import MissionModel
 
@@ -17,6 +17,7 @@ class Server():
         self.root_directory = root_directory
         self.directory = root_directory / name
         self.executable = root_directory / name / executable
+        self.directory_logs = self.root_directory / "logs" / name 
 
         self.mods = {}
         self.state = "Open"
@@ -26,7 +27,7 @@ class Server():
         }
 
 
-    def __parser_html_preset(self, preset: Path) -> int:
+    def _parser_html_preset(self, preset: Path) -> int:
         """
         
         """
@@ -64,7 +65,7 @@ class Server():
         return status
         
 
-    def __verify_workshop(self):
+    def _verify_workshop(self):
         """
         Verify mods for existence and keys
         """
@@ -95,11 +96,10 @@ class Server():
         return status
 
 
-    def __parser_server_config(self, mission_config: MissionModel):
+    def _parser_server_config(self, mission_config: MissionModel):
         template_path = self.root_directory / "configs/server.cfg"
         config_path = self.root_directory / "configs" / f"{self.name}.cfg"
 
-        print()
         # if signatures were not set then used based on keys availability
         if mission_config.signatures == -1:
             signatures = mission_config.signatures
@@ -127,7 +127,7 @@ class Server():
         return config_path
 
 
-    def __parser_start_arguments(self):
+    def _parser_start_arguments(self):
         args = [
            str(self.executable), 
             "-name=" + str(self.name),
@@ -152,26 +152,52 @@ class Server():
         args.append(arg_mods)
         return(args)
 
+    async def _read_stream(self, stream, file_path: Path, callback=None):
+        """
+        Realtime stream catcher
+        """
+        if stream is None:
+            return
 
-    def start(self, mission_config: MissionModel):
-        status = 0
-        status = self.__parser_html_preset(Path(mission_config.preset))
+        # Tworzymy katalog jeśli nie istnieje
+        file_path.parent.mkdir(parents=True, exist_ok=True)
 
+        with open(file_path, "a") as f:
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                decoded_line = line.decode().rstrip()
+                f.write(decoded_line + "\n")
+                f.flush()
+                if callback:
+                    callback(decoded_line)
+
+    async def start(self, mission_config):
+        status = self._parser_html_preset(Path(mission_config.preset))
         if status == 0:
-            self.__verify_workshop()
-        
-        self.__parser_server_config(mission_config)
-        args = self.__parser_start_arguments()
+            self._verify_workshop()
+        self._parser_server_config(mission_config)
+        args = self._parser_start_arguments()
 
         if status != 0:
             return 1, self.messages
-        else:
-            self.process = subprocess.Popen(args, cwd=self.directory)
-            self.state = "Running"
-            return 0, {}
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = self.directory_logs / f"{timestamp}_{self.uuid}.log"
+
+        self.process = await asyncio.create_subprocess_exec(
+            *args,
+            cwd=self.directory,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        self.state = "Running"
+
+        asyncio.create_task(self._read_stream(self.process.stdout, log_file))
 
 
     def stop(self):
-        if hasattr(self, "process") and self.process.poll() is None:
+        if hasattr(self, "process") and self.process.returncode is None:
             self.state = "Open"
             self.process.terminate()
