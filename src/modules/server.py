@@ -114,7 +114,7 @@ class Server():
             "ADMINPASSWD": mission_config.admin_password,
             "PLAYERS": mission_config.players,
             "SIGNATURES": signatures,
-            "MISSSION": mission_config.mission[:-4]
+            "MISSSION": mission_config.mission[:-4] # -4 for .pbo cuz arma
         }
 
         text = template_path.read_text()
@@ -142,15 +142,27 @@ class Server():
             "-debug",
             "-filePatching"
         ]
-        arg_mods = "-mod=\""
+        args_mods = "-mod=\""
         for id, name in self.mods.items():
             mod_path = f"workshop/{id};"
-            arg_mods += mod_path
-        arg_mods = arg_mods[:-1]
-        arg_mods += "\""
+            args_mods += mod_path
+        args_mods = args_mods[:-1]
+        args_mods += "\""
 
-        args.append(arg_mods)
-        return(args)
+        args.append(args_mods)
+        return args, args_mods
+
+    def _parser_start_headless_args(self, name, password, mods ):
+        args = [
+            str(self.executable), "-client", 
+            "-name=" + name,
+            # "-profile=" + name,
+            "-connect=127.0.0.1", "-port=" + str(self.port),
+            "-password=" + str(password)
+        ]
+        args.append(mods)
+
+        return args
 
     async def _read_stream(self, stream, file_path: Path, callback=None):
         """
@@ -159,7 +171,6 @@ class Server():
         if stream is None:
             return
 
-        # Tworzymy katalog jeśli nie istnieje
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(file_path, "a") as f:
@@ -173,18 +184,19 @@ class Server():
                 if callback:
                     callback(decoded_line)
 
-    async def start(self, mission_config):
+
+    async def start(self, mission_config: MissionModel):
         status = self._parser_html_preset(Path(mission_config.preset))
         if status == 0:
             self._verify_workshop()
         self._parser_server_config(mission_config)
-        args = self._parser_start_arguments()
+        args, mods = self._parser_start_arguments()
 
         if status != 0:
             return 1, self.messages
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = self.directory_logs / f"{timestamp}_{self.uuid}.log"
+        log_file = self.directory_logs / f"{timestamp}_{self.uuid}_{self.name}.log"
 
         self.process = await asyncio.create_subprocess_exec(
             *args,
@@ -192,12 +204,41 @@ class Server():
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT
         )
-        self.state = "Running"
-
         asyncio.create_task(self._read_stream(self.process.stdout, log_file))
+
+        print(f"Starting {self.name} on port {self.port}")
+
+        # Handle Headless
+        if mission_config.headless > 0:
+            self.headless = {}
+
+            for i in range(1, mission_config.headless + 1):
+                hc_name = "headless-" + str(i)
+                hc_args = self._parser_start_headless_args(hc_name, mission_config.password, mods)
+                log_file_hc = self.directory_logs / f"{timestamp}_{self.uuid}_{hc_name}.log"
+
+                hc_process = await asyncio.create_subprocess_exec(
+                    *hc_args,
+                    cwd=self.directory,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT
+                )
+                asyncio.create_task(self._read_stream(hc_process.stdout, log_file_hc))
+
+                self.headless[hc_name] = hc_process
+
+                print(f"Starting {hc_name} that will connect to {self.name}")
+
+        self.state = "Running"
 
 
     def stop(self):
         if hasattr(self, "process") and self.process.returncode is None:
-            self.state = "Open"
+            print(f"Requesting stop for {self.name}")
             self.process.terminate()
+            self.state = "Open"
+        
+        if hasattr(self, "headless") and self.process.returncode is None:
+            for hc, process in self.headless.items():
+                print(f"Requesting stop for {hc}")
+                process.terminate()

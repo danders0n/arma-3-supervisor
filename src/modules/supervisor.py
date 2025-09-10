@@ -105,7 +105,7 @@ class Supervisor():
             msgs["supervisor_errors"].append("Invalid players value!")
             status = 1
         
-        if mission_config.server.headless not in range(0, self.server_config.max_headless):
+        if mission_config.server.headless not in range(0, self.server_config.max_headless + 1):
             print (f"ERROR:\tSupervisor: Invalid headless value!")
             msgs["supervisor_errors"].append("Invalid headless value!")
             status = 1
@@ -138,7 +138,6 @@ class Supervisor():
                 self._setup_instance_directory(key, port)
                 server = Server(key, port, Path(self.server_config.directory), self.server_config.executable)
                 self.servers[key] = server
-                print(f"Starting {key} on port {port}")
                 status = 0
                 break
 
@@ -156,7 +155,6 @@ class Supervisor():
 
         for id, srv in self.servers.items():
             if id == server_id:
-                print(f"Requesting stop for {srv.name}")
                 srv.stop()
                 self.servers[id] = None
         
