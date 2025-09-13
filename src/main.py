@@ -2,13 +2,15 @@ import json
 import uvicorn
 
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile
+from fastapi.responses import FileResponse
 from pathlib import Path
 from contextlib import asynccontextmanager
 
 
 # Internal imports
 from modules.supervisor import Supervisor
+from modules.files_manager import FilesManager
 from models.server import StartModel
 from models.config import ConfigModel
 
@@ -37,6 +39,7 @@ async def lifespan(app: FastAPI):
     # --- STARTUP ---
     config = load_config(Path("config/devel.json"))
     app.state.supervisor = Supervisor(config)
+    app.state.files_manager = FilesManager(config)
 
     yield # <- Here There Be Dragons
 
@@ -71,6 +74,29 @@ def status(uuid: str):
 def list_servers():
     return app.state.supervisor.list_servers()
 
+
+@app.post("/upload")
+async def upload_file(file : UploadFile, override: bool = False):
+    upload = await app.state.files_manager.upload(file, override) 
+    if upload["status"] != 0:
+        if status != 0:
+            raise HTTPException( status_code=400, detail=upload["detail"])
+    return upload["detail"]
+
+
+@app.post("/download")
+async def download_file(file: str):
+    return await app.state.files_manager.download(file)
+
+
+@app.post("/list_missions")
+async def list_missions():
+    return await app.state.files_manager.list_pbo_missions()
+
+
+@app.post("/list_presets")
+async def list_presets():
+    return await app.state.files_manager.list_html_presets()
 
 # TODO: Main functiona and config parser here somewhere some time 
 
