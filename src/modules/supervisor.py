@@ -5,7 +5,7 @@ from typing import Dict, Any, Tuple, Optional
 
 from models.config import ConfigModel
 from models.server import StartModel
-from modules.server import Server
+from modules.server import Server, ServerState
 
 REQUIRED_DIRECTORIES = ["configs", "logs", "missions", "presets", "profiles", "server"]
 
@@ -39,6 +39,8 @@ class Supervisor():
         for i in range(1, self.server_config.max_servers + 1):
             server = {f"server-{i}": None}
             self.servers.update(server)
+
+        # TODO: Search for arma3server running after api restart
 
 
     def _setup_instance_directory(self, name: str, port: int):
@@ -154,17 +156,19 @@ class Supervisor():
         idx = -1
 
         for id, srv in self.servers.items():
-            if id == server_id:
+            if id == server_id and srv.state != ServerState.NONE:
                 srv.stop()
                 self.servers[id] = None
         
         # restart instance
     
-    def status(self, server_id: str):
-        status = 0
-        msgs = []
-
-        return status, msgs
+    def status(self, server_name: str):
+        for id, srv in self.servers.items():
+            if id == server_name and srv != None:
+                print(id, srv)
+                return {"status": 0, "detail": srv.status() }
+        
+        return {"status": 1, "detail": "No server in given name!"}
     
 
     def list_servers(self):
@@ -190,6 +194,3 @@ class Supervisor():
         return status
 
 
-
-if __name__ == "__main__":
-    pass

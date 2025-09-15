@@ -5,22 +5,31 @@ import subprocess
 import asyncio
 
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from models.server import MissionModel
+from models.server import MissionModel, ServerState
 
 class Server():
     def __init__(self, name:str, port: int, root_directory: Path, executable: str):
         self.uuid = str(uuid.uuid4())
+        self.state = ServerState.NONE
         self.name = name
         self.port = port
+        self.start_time = None
+        self.hostname = None
+        self.password = None
+        self.admin_password = None
+        self.mission = None
+        self.map = None
+        self.players_count = 0
+        self.mods_count = 0
         self.root_directory = root_directory
         self.directory = root_directory / name
         self.executable = root_directory / name / executable
         self.directory_logs = self.root_directory / "logs" / name 
 
         self.mods = {}
-        self.state = "Open"
+        self.players = {}
         self.messages = {            
             "server_errors": [],
             "server_messages": []
@@ -61,6 +70,7 @@ class Server():
         
         if status == 0:
             self.mods = dict(zip(mods_id, mods_names))
+            self.mods_count = len(self.mods)
 
         return status
         
@@ -101,20 +111,25 @@ class Server():
         config_path = self.root_directory / "configs" / f"{self.name}.cfg"
 
         # if signatures were not set then used based on keys availability
-        if mission_config.signatures == -1:
+        if mission_config.signatures != -1:
             signatures = mission_config.signatures
         else:
             signatures = self.signatures
             
+        self.hostname = mission_config.name
+        self.password = mission_config.password
+        self.admin_password = mission_config.admin_password
+        self.admin_password = mission_config.admin_password
+        self.mission = mission_config.mission[:-4] # -4 for .pbo cuz arma
 
         # TODO: arguments verification
         mapping_dictionary = {
-            "NAME": mission_config.name,
-            "PASSWD": mission_config.password,
-            "ADMINPASSWD": mission_config.admin_password,
+            "NAME": self.hostname,
+            "PASSWD": self.password,
+            "ADMINPASSWD": self.admin_password,
             "PLAYERS": mission_config.players,
             "SIGNATURES": signatures,
-            "MISSSION": mission_config.mission[:-4] # -4 for .pbo cuz arma
+            "MISSSION": self.mission
         }
 
         text = template_path.read_text()
@@ -156,7 +171,7 @@ class Server():
         args = [
             str(self.executable), "-client", 
             "-name=" + name,
-            # "-profile=" + name,
+            "-profiles=/opt/arma-3/profiles/",
             "-connect=127.0.0.1", "-port=" + str(self.port),
             "-password=" + str(password)
         ]
@@ -164,7 +179,25 @@ class Server():
 
         return args
 
-    async def _read_stream(self, stream, file_path: Path, callback=None):
+
+    def _log_analyzer(self, line):
+        if "Dedicated host created" in line:
+            self.state = ServerState.STARTUP
+            print(f"{self.name} changed state to: {self.state.name}")
+        if "read from bank" in line:
+            print(f"{self.name} loaded mission")
+        if "SetServerState" in line:
+            print(line)
+        if "Connected to Steam servers" in line:
+            self.state = ServerState.READY
+            print(f"{self.name} changed state to: {self.state.name}")
+        if "connected" in line and not "headless" in line:
+            print(line)
+        # if "disconnected" in line and not "headless" in line:
+        #     print(line)
+
+
+    async def _read_stream(self, stream, file_path: Path):
         """
         Realtime stream catcher
         """
@@ -179,10 +212,9 @@ class Server():
                 if not line:
                     break
                 decoded_line = line.decode().rstrip()
+                self._log_analyzer(decoded_line)
                 f.write(decoded_line + "\n")
                 f.flush()
-                if callback:
-                    callback(decoded_line)
 
 
     async def start(self, mission_config: MissionModel):
@@ -193,9 +225,11 @@ class Server():
         args, mods = self._parser_start_arguments()
 
         if status != 0:
+            self.state = ServerState.FATAL
             return 1, self.messages
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.start_time = datetime.now()
+        timestamp = self.start_time.strftime("%Y%m%d_%H%M%S")
         log_file = self.directory_logs / f"{timestamp}_{self.uuid}_{self.name}.log"
 
         self.process = await asyncio.create_subprocess_exec(
@@ -206,6 +240,7 @@ class Server():
         )
         asyncio.create_task(self._read_stream(self.process.stdout, log_file))
 
+        self.state = ServerState.INIT
         print(f"Starting {self.name} on port {self.port}")
 
         # Handle Headless
@@ -228,17 +263,44 @@ class Server():
                 self.headless[hc_name] = hc_process
 
                 print(f"Starting {hc_name} that will connect to {self.name}")
-
-        self.state = "Running"
+        
 
 
     def stop(self):
         if hasattr(self, "process") and self.process.returncode is None:
             print(f"Requesting stop for {self.name}")
             self.process.terminate()
-            self.state = "Open"
+            self.state = "OPEN"
         
         if hasattr(self, "headless") and self.process.returncode is None:
             for hc, process in self.headless.items():
                 print(f"Requesting stop for {hc}")
                 process.terminate()
+
+
+    def status(self):
+        if self.start_time != None:
+            now = datetime.now()
+            uptime = str(now - self.start_time)
+        else:
+            uptime = "00:00:00"
+            print(uptime)
+            print(self.mission)
+            print(self.players_count)
+        status = {
+            "uuid": self.uuid,
+            "state": self.state,
+            "uptime": uptime, 
+            "port": self.port,
+            "mission": self.mission,
+            "hostname": self.hostname,
+            "password": self.password,
+            "admin_password": self.admin_password,
+            "map": None,
+            "signatures": self.signatures,
+            "players_count": self.players_count,
+            "mods_count": self.mods_count,
+            "player": {},
+            "mods": self.mods
+        }
+        return status

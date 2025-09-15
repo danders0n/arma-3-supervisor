@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from enum import Enum
+
 from pydantic import BaseModel
 
 @dataclass
@@ -25,3 +27,16 @@ class StartModel(BaseModel):
     version: int
     header: HeaderModel
     server: MissionModel
+
+
+class ServerState(Enum):
+    NONE = 0
+    INIT = 1
+    STARTUP = 2
+    READY = 3
+    LOADING = 4
+    PLAYING = 5
+    DEBRIEFING = 6
+    SHUTDOWN = 7
+    DEGRADED = 8
+    FATAL = 9
