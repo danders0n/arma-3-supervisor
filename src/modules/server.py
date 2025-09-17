@@ -1,7 +1,6 @@
 import re
 import uuid
 import shutil
-import subprocess
 import asyncio
 
 from pathlib import Path
@@ -181,23 +180,53 @@ class Server():
 
 
     def _log_analyzer(self, line):
-        if "Dedicated host created" in line:
+        RE_STARTUP = re.compile(r"Dedicated host created", re.IGNORECASE)
+        RE_READY = re.compile(r"Connected to Steam servers", re.IGNORECASE)
+        RE_MISSION = re.compile(r"Mission (.+?) read from bank", re.IGNORECASE)
+        RE_CONNECTED = re.compile(r"Player (.+?) connected \(id=(\d+)\)", re.IGNORECASE)
+        RE_DISCONNECTED = re.compile(r"Player (.+?) disconnected\.", re.IGNORECASE)
+
+        if match := RE_STARTUP.search(line):
             self.state = ServerState.STARTUP
             print(f"{self.name} changed state to: {self.state.name}")
-        if "read from bank" in line:
-            print(f"{self.name} loaded mission")
-        if "SetServerState" in line:
-            print(line)
-        if "Connected to Steam servers" in line:
+
+        if match := RE_READY.search(line):
             self.state = ServerState.READY
             print(f"{self.name} changed state to: {self.state.name}")
-        if "connected" in line and not "headless" in line:
+
+        if match := RE_MISSION.search(line):
+            mission_map = match.groups()[0]
+            mission, map = mission_map.split(".", 1)
+
+            self.mission = mission
+            self.map = map
+
+            print(f"{self.name} loaded mission: {mission} on map: {map}")
+
+        if match := RE_CONNECTED.search(line):
+            name, uid = match.groups()
+
+            self.players[uid] = { "Player": name, "Connected": datetime.now(), 
+                                   "Disconnected": None, "Playtime": datetime.min}
+            self.players_count += 1
+
+        if match := RE_DISCONNECTED.search(line):
+            name = match.groups()[0]
+
+            for key, val in self.players.items():
+                print(key, val, name)
+                if val["Player"] == name:
+                    self.players[key]["Disconnected"] = datetime.now()
+                    self.players[key]["Playtime"] += self.players[key]["Disconnected"] - self.players[key]["Connected"]
+            
+            self.players_count -= 1
+
+
+        if "SetServerState" in line:
             print(line)
-        # if "disconnected" in line and not "headless" in line:
-        #     print(line)
 
 
-    async def _read_stream(self, stream, file_path: Path):
+    async def _read_stream(self, stream, file_path: Path, is_server = False):
         """
         Realtime stream catcher
         """
@@ -212,7 +241,8 @@ class Server():
                 if not line:
                     break
                 decoded_line = line.decode().rstrip()
-                self._log_analyzer(decoded_line)
+                if is_server:
+                    self._log_analyzer(decoded_line)
                 f.write(decoded_line + "\n")
                 f.flush()
 
@@ -238,7 +268,7 @@ class Server():
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT
         )
-        asyncio.create_task(self._read_stream(self.process.stdout, log_file))
+        asyncio.create_task(self._read_stream(self.process.stdout, log_file, True))
 
         self.state = ServerState.INIT
         print(f"Starting {self.name} on port {self.port}")
@@ -270,7 +300,7 @@ class Server():
         if hasattr(self, "process") and self.process.returncode is None:
             print(f"Requesting stop for {self.name}")
             self.process.terminate()
-            self.state = "OPEN"
+            self.state = ServerState.SHUTDOWN
         
         if hasattr(self, "headless") and self.process.returncode is None:
             for hc, process in self.headless.items():
@@ -284,23 +314,21 @@ class Server():
             uptime = str(now - self.start_time)
         else:
             uptime = "00:00:00"
-            print(uptime)
-            print(self.mission)
-            print(self.players_count)
+
         status = {
             "uuid": self.uuid,
-            "state": self.state,
+            "state": self.state.name,
             "uptime": uptime, 
             "port": self.port,
             "mission": self.mission,
             "hostname": self.hostname,
             "password": self.password,
             "admin_password": self.admin_password,
-            "map": None,
+            "map": self.map,
             "signatures": self.signatures,
             "players_count": self.players_count,
             "mods_count": self.mods_count,
-            "player": {},
+            "player": self.players,
             "mods": self.mods
         }
         return status

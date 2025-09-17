@@ -165,7 +165,6 @@ class Supervisor():
     def status(self, server_name: str):
         for id, srv in self.servers.items():
             if id == server_name and srv != None:
-                print(id, srv)
                 return {"status": 0, "detail": srv.status() }
         
         return {"status": 1, "detail": "No server in given name!"}
