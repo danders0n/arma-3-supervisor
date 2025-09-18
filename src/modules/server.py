@@ -206,8 +206,11 @@ class Server():
         if match := RE_CONNECTED.search(line):
             name, uid = match.groups()
 
-            self.players[uid] = { "Player": name, "Connected": datetime.now(), 
-                                   "Disconnected": None, "Playtime": datetime.min}
+            self.players[uid] = { "Player": name, 
+                                "Connected": datetime.now(), 
+                                "Disconnected": datetime.min, 
+                                "Playtime": datetime.min
+                                }
             self.players_count += 1
 
         if match := RE_DISCONNECTED.search(line):
@@ -295,7 +298,6 @@ class Server():
                 print(f"Starting {hc_name} that will connect to {self.name}")
         
 
-
     def stop(self):
         if hasattr(self, "process") and self.process.returncode is None:
             print(f"Requesting stop for {self.name}")
@@ -331,4 +333,5 @@ class Server():
             "player": self.players,
             "mods": self.mods
         }
+        
         return status
