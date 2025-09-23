@@ -80,7 +80,7 @@ class Server():
         """
         status = 0
         missing_mods, mods_without_keys = [], []
-        workshop_directory = self.directory / "workshop"
+        workshop_directory = self.root_directory / "workshop"
 
         for id, name in self.mods.items():
             mod_path = workshop_directory / id
@@ -104,6 +104,14 @@ class Server():
         # TODO: Download new mods
         return status
 
+
+    def _parser_profile(self):
+        src = self.root_directory / "profiles/home/server/server.Arma3Profile"
+        dst = Path("/opt/arma-3/profiles/home/", self.name)
+        if not dst.exists():
+            dst.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst / f"{self.name}.Arma3Profile")
+        
 
     def _parser_server_config(self, mission_config: MissionModel):
         template_path = self.root_directory / "configs/server.cfg"
@@ -254,6 +262,7 @@ class Server():
         status = self._parser_html_preset(Path(mission_config.preset))
         if status == 0:
             self._verify_workshop()
+        self._parser_profile()
         self._parser_server_config(mission_config)
         args, mods = self._parser_start_arguments()
 

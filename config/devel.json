@@ -2,6 +2,7 @@
     "version": 1,
     "directory": "/opt/arma-3/",
     "executable": "arma3serverprofiling_x64",
+    "workshop": "/opt/arma-3/workshop",
     "max_servers": 3,
     "max_headless": 2
 }

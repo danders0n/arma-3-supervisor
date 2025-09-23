@@ -39,6 +39,7 @@ class Supervisor():
         for i in range(1, self.server_config.max_servers + 1):
             server = {f"server-{i}": None}
             self.servers.update(server)
+            print(f"{i}/{self.server_config.max_servers} server-{i} ready for deployment.")
 
         # TODO: Search for arma3server running after api restart
 
@@ -60,6 +61,12 @@ class Supervisor():
                     # print(f"Creating symlink to... {i.name}")
                     (instance_directory / i.name).symlink_to(i)
 
+            # workshop
+            if not (instance_directory / "workshop").exists():
+                #  print(f"Creating symlink to... {Path(self.server_config.directory, "workshop")}")
+                 (instance_directory /"workshop").symlink_to(Path(self.server_config.directory, "workshop"))
+
+            # keys
             if not (instance_directory / "keys").exists():
                 # print("Creating directory... keys")
                 shutil.copytree(master_directory / "keys", instance_directory / "keys")
@@ -67,6 +74,7 @@ class Supervisor():
                 shutil.rmtree(instance_directory / "keys")
                 shutil.copytree(master_directory / "keys", instance_directory / "keys")
 
+            # userconfig
             if not (instance_directory / "userconfig").exists():
                 # print("Creating directory... userconfig")
                 (instance_directory / "userconfig").mkdir(parents=True)

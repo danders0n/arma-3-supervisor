@@ -28,6 +28,7 @@ def load_config(path: Path) -> ConfigModel:
         version = data["version"],
         directory = data["directory"],
         executable = data["executable"],
+        workshop = data["workshop"],
         max_servers = data["max_servers"],
         max_headless = data["max_headless"],
     )
