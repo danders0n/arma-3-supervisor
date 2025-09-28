@@ -74,6 +74,9 @@ class Supervisor():
             details.append(detail)
             print(detail)
 
+        # TODO: Here check for arma updates
+        # TODO: Here check for worhshop updates
+
         # Create instances profiles names
         profiles_directroy = self.root_directory / "profiles/home"
 
@@ -100,16 +103,24 @@ class Supervisor():
             else:
                 detail = {"Error": f"{profile_template} not found!"}
                 raise Exception({"status": 500, "detail": detail})
+            
+            details.append(detail)
             print(detail)
 
         # Creating instances for supervisor
         for i in range(1, self.max_instances + 1):
             name = f"server-{i}"
+
             server = {name: None}
             self.servers.update(server)
             self._setup_instance_directory(name)
-            detail = {"Info" : f"{name} ready for deployment."}
+
+            detail = {"Info": f"{name} ready for deployment."}
+
+            details.append(detail)
             print(detail)
+
+        # TODO: Details to log
 
 
     def _setup_instance_directory(self, name: str):

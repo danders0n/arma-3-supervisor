@@ -117,6 +117,9 @@ class Server():
         template_path = self.root_directory / "configs/server.cfg"
         config_path = self.root_directory / "configs" / f"{self.name}.cfg"
 
+        print(template_path)
+        print(config_path)
+
         # if signatures were not set then used based on keys availability
         if mission_config.signatures != -1:
             signatures = mission_config.signatures
@@ -126,24 +129,24 @@ class Server():
         self.hostname = mission_config.name
         self.password = mission_config.password
         self.admin_password = mission_config.admin_password
-        self.admin_password = mission_config.admin_password
         self.mission = mission_config.mission[:-4] # -4 for .pbo cuz arma
 
         # TODO: arguments verification
         mapping_dictionary = {
+            "TAG": "ASTERIX",
             "NAME": self.hostname,
-            "PASSWD": self.password,
-            "ADMINPASSWD": self.admin_password,
+            "PASSWORD": self.password,
+            "ADMINPASSWORD": self.admin_password,
             "PLAYERS": mission_config.players,
             "SIGNATURES": signatures,
-            "MISSSION": self.mission
+            "MISSION": self.mission
         }
 
         text = template_path.read_text()
 
         for tag, value in mapping_dictionary.items():
             text = text.replace(f"[{tag}]", str(value))
-            # print(f"Writing: {value}")
+            print(f"Writing: {tag}: {value}")
 
         config_path.write_text(text)
         return config_path
