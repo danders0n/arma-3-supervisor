@@ -44,14 +44,14 @@ class Supervisor():
             target_directory = self.root_directory / directory
             if not target_directory.exists():
                 target_directory.mkdir(parents=True, exist_ok=True)
-                detail = {"Warning": f"{target_directory} was not found... Creating"}
+                detail = {"Warning": f"{target_directory} was not found... Creating..."}
                 details.append(detail)
                 print(detail)
 
         # Check workshop directory existence
         if not self.workshop_directory.exists():
             self.workshop_directory.mkdir(parents=True, exist_ok=True)
-            detail = {"Warning": f"{self.workshop_directory} was not found... Creating"}
+            detail = {"Warning": f"{self.workshop_directory} was not found... Creating..."}
             details.append(detail)
             print(detail)
 
@@ -121,6 +121,12 @@ class Supervisor():
             print(detail)
 
         # TODO: Details to log
+
+
+    def shutdown(self):
+        for id, srv in self.servers.items():
+            srv.stop()
+            self.servers[id] = None
 
 
     def _setup_instance_directory(self, name: str):

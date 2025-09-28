@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     yield # <- Here There Be Dragons
 
     # --- SHUTDOWN ---
-
+    app.state.supervisor.shutdown()
 
 # --- FAST API ---
 app = FastAPI(lifespan = lifespan)
@@ -48,13 +48,13 @@ async def start(mission_config: StartModel, background_tasks: BackgroundTasks):
     return messeages
 
 @app.delete("/stop", summary="Try stop the server", tags=["server"])
-async def stop(uuid: str):
-    app.state.supervisor.stop(uuid)
+async def stop(name: str):
+    app.state.supervisor.stop(name)
 
 
 @app.get("/status", tags=["server"])
-def status(uuid: str):
-    return app.state.supervisor.status(uuid)
+def status(name: str):
+    return app.state.supervisor.status(name)
 
 
 @app.get("/list_servers", summary="List all running servers under supervisor")
