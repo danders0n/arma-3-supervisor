@@ -3,6 +3,8 @@ import shutil
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
 
+from fastapi import HTTPException
+
 from models.config import ConfigModel
 from models.server import StartModel
 from modules.server import Server, ServerState
@@ -15,36 +17,102 @@ class Supervisor():
     """ 
     def __init__(self, server_config: ConfigModel):
         self.server_config = server_config
+
+        self.root_directory = Path(server_config.directory)
+        self.workshop_directory = Path(server_config.workshop)
+        self.executable = server_config.executable
+        self.max_instances = server_config.max_servers
+        self.max_headless = server_config.max_headless
+
         self.servers = {}
 
-        self._validate_server_setup()
+        self._startup()
 
 
-    def _validate_server_setup(self):
-        working_directory  = Path(self.server_config.directory)
+    def _startup(self):
+        details = []
 
-        # Checking for master directory
-        if not working_directory.exists():
-            print(f"ERROR:  {working_directory} not found!")
-            error = {"supervisor_error": f"{working_directory} not found!"}
-            return error
-        
-        # Checking for subdirectories
+        # Check root directory existence
+        if not self.root_directory.exists():
+            detail = {"Error": f"{self.root_directory} not found!"}
+            details.append(detail)
+            print(detail)
+            raise Exception({"status": 500, "detail": detail})
+
+        # Checking for root subdirectories
         for directory in REQUIRED_DIRECTORIES:
-            tgt_dir = working_directory / directory
-            if not tgt_dir.exists():
-                print(f"WARNING:  Missing directory... {tgt_dir}")
+            target_directory = self.root_directory / directory
+            if not target_directory.exists():
+                target_directory.mkdir(parents=True, exist_ok=True)
+                detail = {"Warning": f"{target_directory} was not found... Creating"}
+                details.append(detail)
+                print(detail)
+
+        # Check workshop directory existence
+        if not self.workshop_directory.exists():
+            self.workshop_directory.mkdir(parents=True, exist_ok=True)
+            detail = {"Warning": f"{self.workshop_directory} was not found... Creating"}
+            details.append(detail)
+            print(detail)
+
+        # Copy templates, configs and profiles
+        template_directory = Path().resolve() / "config/arma"
         
-        # # Setup instances
-        for i in range(1, self.server_config.max_servers + 1):
-            server = {f"server-{i}": None}
+        for i in ["basic.cfg", "server.cfg", "cba_settings.sqf"]:
+            filepath = template_directory / i
+            configs = self.root_directory / "configs"
+
+            if filepath.exists():
+                if (configs / i).exists():
+                    detail = {"Warning": f"Overwriting... {filepath} to {configs / i}"}
+                else:
+                    detail = {"Info": f"Copying... {filepath} to {configs / i}"}
+                shutil.copy2(filepath, configs)
+            else:
+                detail = {"Error": f"{filepath} not found!"}
+            
+            details.append(detail)
+            print(detail)
+
+        # Create instances profiles names
+        profiles_directroy = self.root_directory / "profiles/home"
+
+        # Check for profiles directory
+        if not profiles_directroy.exists():
+            profiles_directroy.mkdir(parents=True, exist_ok=True)
+            detail = {"Warning": f"{profiles_directroy} was not found... Creating"}
+            details.append(detail)
+            print(detail)
+
+        # Creating profiles files
+        for i in range(1, self.max_instances + 1):
+            instance_name = f"server-{i}"
+
+            # Creating profiles files
+            profile_template = template_directory / "CustomDifficulty.Arma3Profile"
+            profile_dir = profiles_directroy / instance_name / f"{instance_name}.Arma3Profile"
+            if profile_template.exists():
+                if profile_dir.exists():
+                    detail = {"Warning": f"Overwriting... {profile_template} to {profile_dir}"}
+                else:
+                    detail = {"Info": f"Copying... {profile_template} to {profile_dir}"}
+                shutil.copy(profile_template, profile_dir)
+            else:
+                detail = {"Error": f"{profile_template} not found!"}
+                raise Exception({"status": 500, "detail": detail})
+            print(detail)
+
+        # Creating instances for supervisor
+        for i in range(1, self.max_instances + 1):
+            name = f"server-{i}"
+            server = {name: None}
             self.servers.update(server)
-            print(f"{i}/{self.server_config.max_servers} server-{i} ready for deployment.")
+            self._setup_instance_directory(name)
+            detail = {"Info" : f"{name} ready for deployment."}
+            print(detail)
 
-        # TODO: Search for arma3server running after api restart
 
-
-    def _setup_instance_directory(self, name: str, port: int):
+    def _setup_instance_directory(self, name: str):
         """
         Creates new server instance
         """
@@ -145,7 +213,6 @@ class Supervisor():
             if val == None:
                 i = int(key[-1:])
                 port = int(f"2{i+2}02")
-                self._setup_instance_directory(key, port)
                 server = Server(key, port, Path(self.server_config.directory), self.server_config.executable)
                 self.servers[key] = server
                 status = 0
