@@ -1,14 +1,19 @@
+import re
 import shutil
+import asyncio
+import logging
 
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
-
-from fastapi import HTTPException
+from typing import Tuple
+from datetime import datetime
 
 from models.config import ConfigModel
 from models.server import StartModel
+from models.supervisor import ResponseModel, SupervisorState
 from modules.server import Server, ServerState
 
+SRC_ROOT = Path(__file__).parent.parent 
+TEMPLATE_DIRECTORY = SRC_ROOT / "config/arma"
 REQUIRED_DIRECTORIES = ["configs", "logs", "missions", "presets", "profiles", "server"]
 
 class Supervisor():
@@ -16,6 +21,7 @@ class Supervisor():
     docstring
     """ 
     def __init__(self, server_config: ConfigModel):
+        self.state = SupervisorState.NONE
         self.server_config = server_config
 
         self.root_directory = Path(server_config.directory)
@@ -26,14 +32,14 @@ class Supervisor():
 
         self.servers = {}
 
-        self._startup()
 
-
-    def _startup(self):
+    def startup(self):
         details = []
-
+        
+        self.state = SupervisorState.INIT
         # Check root directory existence
         if not self.root_directory.exists():
+            self.state = SupervisorState.FATAL
             detail = {"Error": f"{self.root_directory} not found!"}
             details.append(detail)
             print(detail)
@@ -70,6 +76,7 @@ class Supervisor():
                 shutil.copy2(filepath, configs)
             else:
                 detail = {"Error": f"{filepath} not found!"}
+                self.state = SupervisorState.FATAL
             
             details.append(detail)
             print(detail)
@@ -125,8 +132,10 @@ class Supervisor():
 
     def shutdown(self):
         for id, srv in self.servers.items():
-            srv.stop()
-            self.servers[id] = None
+            if srv is not None:
+                srv.stop()
+                self.servers[id] = None
+        self.state = SupervisorState.SHUTDOWN
 
 
     def _setup_instance_directory(self, name: str):
@@ -169,58 +178,89 @@ class Supervisor():
                 (instance_directory /"mpmissions").symlink_to(Path(self.server_config.directory , "missions"))
 
 
-    def validate_start_request(self, mission_config: StartModel) -> Tuple[int, dict]:
-        """
-        Preprocessing of input data, to quicly respond via API
-        """
-        status = 0
-        msgs = {
-            "supervisor_errors": [],
-            "supervisor_messages": []
+    def _log_entry(self, status, level, message) -> dict:
+        return {
+            "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
+            "status": status,
+            "level": level,
+            "message": message,
         }
 
-        if mission_config.version != 1:
-            print (f"ERROR:\tSupervisor: Unsupported request schema version!")
-            msgs["supervisor_errors"].append("Unsupported request schema version!")
-            status = 1
-            
-        # for val in [mission_config.server.name, mission_config.server.password, mission_config.server.admin_password]:
+
+    def validate_start(self, config: StartModel) -> ResponseModel:
+        """ Request preprocessing """
+        status = 0
+        details = []
+
+        # TODO: name and passwords check here
+        # for val in [config.server.name, config.server.password, config.server.admin_password]:
         #     if not re.match(r"^[A-Za-z0-9_-]+$", val):
-        #         print (f"ERROR:\tSupervisor: Cought forbidden character: only letters, numbers, _ and - allowed")
-        #         msgs["supervisor_errors"].append("Cought forbidden character: only letters, numbers, _ and - allowed")
         #         status = 1
+            
+        if config.server.signatures not in (-1, 0, 2):
+            status = 0
+            detail = self._log_entry(
+                status, 
+                "ERROR",
+                f"Invalid signature value... Possible values: -1, 0, 2... Given: {config.server.signatures}"
+            )
+            details.append(detail)
+            print(detail)
 
-        if mission_config.server.signatures not in (-1, 0, 2):
-            print (f"ERROR:\tSupervisor: Invalid signature value!")
-            msgs["supervisor_errors"].append("Invalid signature value!")
+        if config.server.players not in range(1, 256):
             status = 1
+            detail = self._log_entry(
+                status, 
+                "ERROR",
+                f"Invalid players value... Possible range: 1-256... Given: {config.server.players}"
+            )
+            details.append(detail)
+            print(detail)
         
-        if mission_config.server.players not in range(1, 256):
-            print (f"ERROR:\tSupervisor: Invalid players value!")
-            msgs["supervisor_errors"].append("Invalid players value!")
+        if config.server.headless not in range(0, self.max_headless + 1):
             status = 1
-        
-        if mission_config.server.headless not in range(0, self.server_config.max_headless + 1):
-            print (f"ERROR:\tSupervisor: Invalid headless value!")
-            msgs["supervisor_errors"].append("Invalid headless value!")
-            status = 1
-        
-        path = Path(self.server_config.directory, "missions", mission_config.server.mission)
-        if not path.exists(): 
-            print (f"ERROR:\tSupervisor: Mission file not found... {mission_config.server.mission}")
-            msgs["supervisor_errors"].append(f"Mission file not found... {mission_config.server.mission}")
-            status = 1
+            detail = self._log_entry(
+                status, 
+                "ERROR",
+                f"Invalid headless value... Possible range: 0-{self.max_headless} Given: {config.server.headless}"
+            )
+            details.append(detail)
+            print(detail)
 
-        path = Path(self.server_config.directory, "presets", mission_config.server.preset)
-        if not path.exists(): 
-            print (f"ERROR:\tSupervisor: Preset file not found!")
-            msgs["supervisor_errors"].append(f"Preset file not found!")
+        filepath = Path(self.root_directory, "missions", config.server.mission)
+        if not filepath.exists():
             status = 1
+            detail = self._log_entry(
+                status, 
+                "ERROR",
+                f"Invalid mission value... {config.server.mission} not found in mission directory"
+            )
+            details.append(detail)
+            print(detail)
 
+        filepath = Path(self.root_directory, "presets", config.server.preset)
+        if not filepath.exists():
+            status = 1
+            detail = self._log_entry(
+                status, 
+                "ERROR",
+                f"Invalid preset value... {config.server.preset} not found in mission directory"
+            )
+            details.append(detail)
+            print(detail)
+        
+
+        
         if status == 0:
-            msgs["supervisor_messages"].append("Git")
+            detail = self._log_entry(
+                status, 
+                "INFO",
+                f"Server will be launched!"
+            )
+            details.append(detail)
+            print(detail)
 
-        return status, msgs
+        return ResponseModel(status=status, details=details)
 
 
     async def start(self, mission_config: StartModel):
@@ -244,15 +284,27 @@ class Supervisor():
         return status, msgs
 
 
-    def stop(self, server_id: str):
-        idx = -1
-
+    def validate_stop(self, server_name: str):
+        """ Request preprocessing """
+        status = 0
+        details = []
         for id, srv in self.servers.items():
-            if id == server_id and srv.state != ServerState.NONE:
-                srv.stop()
-                self.servers[id] = None
+            if id == server_name and srv.state != ServerState.NONE:
+                detail = self._log_entry(
+                status, 
+                "INFO",
+                f"{server_name} will be stoped"
+                )
+                details.append(detail)
+                print(detail)
         
-        # restart instance
+        return ResponseModel(status=status, details=details)
+
+
+    def stop(self, server_id: str):
+        self.servers[server_id].stop()
+        self.servers[server_id] = None
+
     
     def status(self, server_name: str):
         for id, srv in self.servers.items():
@@ -283,4 +335,3 @@ class Supervisor():
         status["mods"] = server.mods
 
         return status
-

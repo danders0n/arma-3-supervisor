@@ -1,5 +1,6 @@
 import json
 import uvicorn
+import logging.config
 
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile
@@ -28,10 +29,14 @@ async def lifespan(app: FastAPI):
     app.state.supervisor = Supervisor(config)
     app.state.files_manager = FilesManager(config)
 
+    app.state.supervisor.startup()
+
     yield # <- Here There Be Dragons
 
     # --- SHUTDOWN ---
     app.state.supervisor.shutdown()
+
+logger = logging.getLogger("app")
 
 # --- FAST API ---
 app = FastAPI(lifespan = lifespan)
@@ -39,17 +44,26 @@ app = FastAPI(lifespan = lifespan)
     
 @app.post("/start", summary="Try start the server", tags=["server"])
 async def start(mission_config: StartModel, background_tasks: BackgroundTasks):
-    status, messeages = app.state.supervisor.validate_start_request(mission_config)
-    if status != 0:
-        raise HTTPException( status_code=400, detail=messeages)
+    response = app.state.supervisor.validate_start(mission_config)
+
+    if response.status != 0:
+        raise HTTPException( status_code=400, detail=response.details)
     else:
         background_tasks.add_task(app.state.supervisor.start, mission_config)
 
-    return messeages
+    return response.details
+
 
 @app.delete("/stop", summary="Try stop the server", tags=["server"])
-async def stop(name: str):
-    app.state.supervisor.stop(name)
+async def stop(name: str, background_tasks: BackgroundTasks):
+    response = app.state.supervisor.validate_stop(name)
+    
+    if response.status != 0:
+        raise HTTPException( status_code=400, detail=response.details)
+    else:
+        background_tasks.add_task(app.state.supervisor.stop, name)
+
+    return response.details
 
 
 @app.get("/status", tags=["server"])

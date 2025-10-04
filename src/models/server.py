@@ -1,6 +1,6 @@
 from enum import Enum
-
 from pydantic import BaseModel
+
 
 class HeaderModel(BaseModel):
     origin: str
@@ -9,14 +9,16 @@ class HeaderModel(BaseModel):
 
 
 class MissionModel(BaseModel):
-    name: str
-    password: str
-    admin_password: str
-    signatures: int
-    players: int
-    mission: str
-    preset: str
-    headless: int
+    name: str = "JO Stray Dog"
+    password: str = "dupa@1234"
+    admin_password: str = "asterix@7890"
+    signatures: int = -1
+    players: int = 64
+    mission: str = "ibc_jo_stray_dog.tem_kujari.pbo"
+    preset: str = "ibc_jo_stray_dog.html"
+    headless: int = 0
+    skill_ai: int = 1
+    precision_ai: float = 0.3
 
 
 class StartModel(BaseModel):
